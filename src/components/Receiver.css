@@ -362,15 +362,33 @@
   color: #ffffff;
 }
 
-.status-value.gray {
-  background: #6c757d;
-  color: #ffffff;
-}
-
 .status-value.unknown {
   background: #f8f9fa;
   color: #6c757d;
   border: 1px solid #dee2e6;
+}
+
+.brightness-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.brightness-label {
+  font-size: 0.8rem;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+.brightness-value {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  background: #e9ecef;
+  border-radius: 4px;
+  min-width: 3rem;
+  text-align: center;
 }
 
 .state-history {
@@ -405,9 +423,7 @@
   background: #000000;
 }
 
-.history-bar.gray {
-  background: #6c757d;
-}
+
 @media (max-width: 768px) {
   .receiver {
     flex-direction: column;

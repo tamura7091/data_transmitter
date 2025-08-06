@@ -101,7 +101,7 @@ const Receiver = () => {
     return false;
   }, [decodedText]);
 
-  // Detection loop with proper timing-based protocol
+    // Detection loop with simple ON/OFF protocol
   const detectFlashes = useCallback(() => {
     if (!isReceiving || !videoRef.current || !canvasRef.current) return;
 
@@ -116,15 +116,16 @@ const Receiver = () => {
 
       const brightness = analyzeBrightness(canvas, ctx);
       const currentTime = Date.now();
+      const threshold = detectionSensitivity * 2.55; // Convert percentage to 0-255 scale
       
-      // Classify current state based on brightness with better thresholds
-      let currentColor = 'unknown';
-      if (brightness > 180) currentColor = 'white';
-      else if (brightness < 80) currentColor = 'black';
-      else if (brightness >= 80 && brightness <= 180) currentColor = 'gray';
+      // Simple ON/OFF detection
+      const isOn = brightness > threshold;
+      const currentState = isOn ? 'white' : 'black';
       
-      // Detect state changes
-      if (currentColor !== currentStateRef.current.color) {
+      // Detect state changes with debouncing
+      if (currentState !== currentStateRef.current.color && 
+          currentTime - lastDetectionTime.current > 50) { // 50ms debounce
+        
         // Record the previous state
         if (currentStateRef.current.color !== 'unknown') {
           const duration = currentTime - currentStateRef.current.startTime;
@@ -133,63 +134,47 @@ const Receiver = () => {
             duration: duration
           });
           
-          // Keep only last 10 states
-          if (stateHistoryRef.current.length > 10) {
+          // Keep only last 20 states
+          if (stateHistoryRef.current.length > 20) {
             stateHistoryRef.current.shift();
           }
         }
         
         // Start new state
         currentStateRef.current = {
-          color: currentColor,
+          color: currentState,
           startTime: currentTime,
           duration: 0
         };
+        
+        // Determine bit value
+        const bit = isOn ? '1' : '0';
+        binaryBufferRef.current += bit;
+        lastDetectionTime.current = currentTime;
+        
+        // Update live display of bits
+        setDetectedBits(prev => prev + 1);
+        setCurrentBits(prev => {
+          const newBits = prev + bit;
+          // Keep last 50 bits visible
+          return newBits.length > 50 ? newBits.slice(-50) : newBits;
+        });
+        
+        // Update status
+        setReceivingStatus(`Detecting... (${binaryBufferRef.current.length} bits) - Last: ${bit}`);
+        
+        // Process data more frequently for better responsiveness
+        if (binaryBufferRef.current.length > 50) {
+          if (processBinaryData(binaryBufferRef.current)) {
+            return; // Don't continue if data is successfully processed
+          }
+          
+          // Keep reasonable buffer size
+          if (binaryBufferRef.current.length > 2000) {
+            binaryBufferRef.current = binaryBufferRef.current.slice(-1000);
+          }
+        }
       }
-      
-             // Process state history to detect bits with improved logic
-       if (stateHistoryRef.current.length >= 2) {
-         const lastState = stateHistoryRef.current[stateHistoryRef.current.length - 1];
-         const secondLastState = stateHistoryRef.current[stateHistoryRef.current.length - 2];
-         
-         // Look for pattern: [data color] -> [gray sync] with minimum duration
-         if (lastState.color === 'gray' && secondLastState.color !== 'gray' && 
-             lastState.duration > 20 && secondLastState.duration > 50) { // Minimum durations
-           
-           // Determine bit value based on the data color
-           let bit = null;
-           if (secondLastState.color === 'white') bit = '1';
-           else if (secondLastState.color === 'black') bit = '0';
-           
-           if (bit !== null) {
-             binaryBufferRef.current += bit;
-             lastDetectionTime.current = currentTime;
-             
-             // Update live display of bits
-             setDetectedBits(prev => prev + 1);
-             setCurrentBits(prev => {
-               const newBits = prev + bit;
-               // Keep last 50 bits visible
-               return newBits.length > 50 ? newBits.slice(-50) : newBits;
-             });
-             
-             // Update status
-             setReceivingStatus(`Detecting... (${binaryBufferRef.current.length} bits) - Last: ${bit}`);
-             
-             // Process data more frequently for better responsiveness
-             if (binaryBufferRef.current.length > 50) {
-               if (processBinaryData(binaryBufferRef.current)) {
-                 return; // Don't continue if data is successfully processed
-               }
-               
-               // Keep reasonable buffer size
-               if (binaryBufferRef.current.length > 2000) {
-                 binaryBufferRef.current = binaryBufferRef.current.slice(-1000);
-               }
-             }
-           }
-         }
-       }
       
       lastBrightnessRef.current = brightness;
       frameCountRef.current++;
@@ -371,7 +356,7 @@ const Receiver = () => {
               <div className="state-history">
                 <span className="history-label">Recent States:</span>
                 <div className="history-bars">
-                  {stateHistoryRef.current.slice(-5).map((state, index) => (
+                  {stateHistoryRef.current.slice(-8).map((state, index) => (
                     <div 
                       key={index} 
                       className={`history-bar ${state.color}`}
@@ -379,6 +364,12 @@ const Receiver = () => {
                     />
                   ))}
                 </div>
+              </div>
+              <div className="brightness-info">
+                <span className="brightness-label">Brightness:</span>
+                <span className="brightness-value">
+                  {Math.round(lastBrightnessRef.current)}
+                </span>
               </div>
             </div>
           )}

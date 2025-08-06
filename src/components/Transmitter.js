@@ -32,7 +32,7 @@ const Transmitter = () => {
     });
   };
 
-  // Flash transmission function with proper timing protocol
+  // Flash transmission function with simple ON/OFF protocol
   const transmitBinary = useCallback(async (binaryData) => {
     const flashArea = document.getElementById('flash-area');
     if (!flashArea) return;
@@ -44,10 +44,10 @@ const Transmitter = () => {
     const endSequence = '01010101';
     const fullData = startSequence + binaryData + endSequence;
 
-    // Protocol: Each bit is transmitted as:
-    // - WHITE for 1 bit duration = '1'
-    // - BLACK for 1 bit duration = '0'
-    // - Each bit is followed by a brief GRAY pulse for synchronization
+    // Simple protocol: 
+    // - WHITE (ON) for 1 bit duration = '1'
+    // - BLACK (OFF) for 1 bit duration = '0'
+    // - No sync pulses needed, just pure binary
     
     for (let i = 0; i < fullData.length; i++) {
       if (!transmissionRef.current) break;
@@ -57,10 +57,6 @@ const Transmitter = () => {
       // Transmit the bit
       flashArea.style.backgroundColor = bit === '1' ? '#ffffff' : '#000000';
       await new Promise(resolve => setTimeout(resolve, flashSpeed));
-      
-      // Sync pulse (gray) to mark end of bit
-      flashArea.style.backgroundColor = '#808080';
-      await new Promise(resolve => setTimeout(resolve, flashSpeed * 0.3)); // 30% of bit duration
     }
     
     // Reset to default color
