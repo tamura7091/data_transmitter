@@ -321,6 +321,93 @@
   0%, 50% { opacity: 1; }
   51%, 100% { opacity: 0; }
 }
+
+.detection-status {
+  background: #f8f9fa;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-top: 1rem;
+  border: 1px solid #e9ecef;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.status-label {
+  font-size: 0.8rem;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+.status-value {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  text-transform: capitalize;
+}
+
+.status-value.white {
+  background: #ffffff;
+  color: #000000;
+  border: 1px solid #dee2e6;
+}
+
+.status-value.black {
+  background: #000000;
+  color: #ffffff;
+}
+
+.status-value.gray {
+  background: #6c757d;
+  color: #ffffff;
+}
+
+.status-value.unknown {
+  background: #f8f9fa;
+  color: #6c757d;
+  border: 1px solid #dee2e6;
+}
+
+.state-history {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.history-label {
+  font-size: 0.8rem;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+.history-bars {
+  display: flex;
+  gap: 2px;
+}
+
+.history-bar {
+  width: 8px;
+  height: 20px;
+  border-radius: 2px;
+  border: 1px solid #dee2e6;
+}
+
+.history-bar.white {
+  background: #ffffff;
+}
+
+.history-bar.black {
+  background: #000000;
+}
+
+.history-bar.gray {
+  background: #6c757d;
+}
 @media (max-width: 768px) {
   .receiver {
     flex-direction: column;
