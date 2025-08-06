@@ -9,6 +9,8 @@ const Receiver = () => {
   const [receivingStatus, setReceivingStatus] = useState('');
   const [currentBits, setCurrentBits] = useState('');
   const [detectedBits, setDetectedBits] = useState(0);
+  const [decodedText, setDecodedText] = useState('');
+  const [isDecoding, setIsDecoding] = useState(false);
   
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -69,13 +71,33 @@ const Receiver = () => {
         const decodedText = binaryToString(dataSection);
         if (decodedText.trim()) {
           setReceivedData(decodedText);
+          setDecodedText(decodedText);
+          setIsDecoding(false);
           setReceivingStatus('Data received successfully!');
           return true;
         }
       }
     }
+    
+    // Try to decode partial data for live display
+    if (binaryString.length > 100) {
+      const partialData = binaryString.slice(-200); // Look at last 200 bits
+      const partialStartIndex = partialData.indexOf(startSequence);
+      
+      if (partialStartIndex !== -1) {
+        const partialSection = partialData.substring(partialStartIndex + startSequence.length);
+        if (partialSection.length >= 8 && partialSection.length % 8 === 0) {
+          const partialText = binaryToString(partialSection);
+          if (partialText.trim() && partialText !== decodedText) {
+            setDecodedText(partialText);
+            setIsDecoding(true);
+          }
+        }
+      }
+    }
+    
     return false;
-  }, []);
+  }, [decodedText]);
 
   // Detection loop
   const detectFlashes = useCallback(() => {
@@ -171,6 +193,8 @@ const Receiver = () => {
     await startCamera();
     setIsReceiving(true);
     setReceivedData('');
+    setDecodedText('');
+    setIsDecoding(false);
     setCurrentBits('');
     setDetectedBits(0);
     setReceivingStatus('Starting detection...');
@@ -294,11 +318,25 @@ const Receiver = () => {
           {isReceiving && currentBits && (
             <div className="live-bits-display">
               <h4>Live Binary Stream:</h4>
-              <div className="bits-stream">
-                {currentBits}
+              <div className="bits-container">
+                <div className="bits-stream" id="bits-stream">
+                  {currentBits.length > 100 ? 
+                    `${currentBits.slice(0, 50)}...${currentBits.slice(-50)}` : 
+                    currentBits
+                  }
+                </div>
+                <button 
+                  className="copy-bits-button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(currentBits);
+                    alert('Binary copied to clipboard!');
+                  }}
+                >
+                  Copy All Bits
+                </button>
               </div>
               <div className="bits-counter">
-                Total bits detected: {detectedBits}
+                Total bits detected: {detectedBits} | Showing: {currentBits.length > 100 ? '100 bits' : `${currentBits.length} bits`}
               </div>
             </div>
           )}
@@ -308,6 +346,16 @@ const Receiver = () => {
       <div className="data-section">
         <h3>Received Data</h3>
         <div className="data-container">
+          {isReceiving && decodedText && (
+            <div className="live-decoding">
+              <h4>Live Decoding:</h4>
+              <div className={`decoded-preview ${isDecoding ? 'decoding' : 'complete'}`}>
+                {decodedText}
+                {isDecoding && <span className="decoding-indicator">...</span>}
+              </div>
+            </div>
+          )}
+          
           <textarea
             value={receivedData}
             readOnly
