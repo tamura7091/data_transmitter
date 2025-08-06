@@ -32,7 +32,7 @@ const Transmitter = () => {
     });
   };
 
-  // Flash transmission function with simple ON/OFF protocol
+  // Flash transmission function with Manchester encoding
   const transmitBinary = useCallback(async (binaryData) => {
     const flashArea = document.getElementById('flash-area');
     if (!flashArea) return;
@@ -44,19 +44,30 @@ const Transmitter = () => {
     const endSequence = '01010101';
     const fullData = startSequence + binaryData + endSequence;
 
-    // Simple protocol: 
-    // - WHITE (ON) for 1 bit duration = '1'
-    // - BLACK (OFF) for 1 bit duration = '0'
-    // - No sync pulses needed, just pure binary
+    // Manchester encoding: Each bit is transmitted as 2 half-bits
+    // - '0' = BLACK → WHITE (low to high transition)
+    // - '1' = WHITE → BLACK (high to low transition)
+    // This ensures every bit has a transition, making detection reliable
     
     for (let i = 0; i < fullData.length; i++) {
       if (!transmissionRef.current) break;
       
       const bit = fullData[i];
+      const halfDuration = flashSpeed / 2;
       
-      // Transmit the bit
-      flashArea.style.backgroundColor = bit === '1' ? '#ffffff' : '#000000';
-      await new Promise(resolve => setTimeout(resolve, flashSpeed));
+      if (bit === '0') {
+        // '0' = BLACK → WHITE
+        flashArea.style.backgroundColor = '#000000';
+        await new Promise(resolve => setTimeout(resolve, halfDuration));
+        flashArea.style.backgroundColor = '#ffffff';
+        await new Promise(resolve => setTimeout(resolve, halfDuration));
+      } else {
+        // '1' = WHITE → BLACK
+        flashArea.style.backgroundColor = '#ffffff';
+        await new Promise(resolve => setTimeout(resolve, halfDuration));
+        flashArea.style.backgroundColor = '#000000';
+        await new Promise(resolve => setTimeout(resolve, halfDuration));
+      }
     }
     
     // Reset to default color

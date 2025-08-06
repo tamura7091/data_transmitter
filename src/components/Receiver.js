@@ -101,7 +101,7 @@ const Receiver = () => {
     return false;
   }, [decodedText]);
 
-    // Detection loop with simple ON/OFF protocol
+    // Detection loop with Manchester decoding
   const detectFlashes = useCallback(() => {
     if (!isReceiving || !videoRef.current || !canvasRef.current) return;
 
@@ -124,7 +124,7 @@ const Receiver = () => {
       
       // Detect state changes with debouncing
       if (currentState !== currentStateRef.current.color && 
-          currentTime - lastDetectionTime.current > 50) { // 50ms debounce
+          currentTime - lastDetectionTime.current > 30) { // 30ms debounce for Manchester
         
         // Record the previous state
         if (currentStateRef.current.color !== 'unknown') {
@@ -147,31 +147,47 @@ const Receiver = () => {
           duration: 0
         };
         
-        // Determine bit value
-        const bit = isOn ? '1' : '0';
-        binaryBufferRef.current += bit;
-        lastDetectionTime.current = currentTime;
-        
-        // Update live display of bits
-        setDetectedBits(prev => prev + 1);
-        setCurrentBits(prev => {
-          const newBits = prev + bit;
-          // Keep last 50 bits visible
-          return newBits.length > 50 ? newBits.slice(-50) : newBits;
-        });
-        
-        // Update status
-        setReceivingStatus(`Detecting... (${binaryBufferRef.current.length} bits) - Last: ${bit}`);
-        
-        // Process data more frequently for better responsiveness
-        if (binaryBufferRef.current.length > 50) {
-          if (processBinaryData(binaryBufferRef.current)) {
-            return; // Don't continue if data is successfully processed
+        // Manchester decoding: Look for transitions
+        if (stateHistoryRef.current.length >= 2) {
+          const lastState = stateHistoryRef.current[stateHistoryRef.current.length - 1];
+          const secondLastState = stateHistoryRef.current[stateHistoryRef.current.length - 2];
+          
+          // Determine bit based on transition direction
+          let bit = null;
+          if (lastState.color === 'white' && secondLastState.color === 'black') {
+            // BLACK → WHITE = '0'
+            bit = '0';
+          } else if (lastState.color === 'black' && secondLastState.color === 'white') {
+            // WHITE → BLACK = '1'
+            bit = '1';
           }
           
-          // Keep reasonable buffer size
-          if (binaryBufferRef.current.length > 2000) {
-            binaryBufferRef.current = binaryBufferRef.current.slice(-1000);
+          if (bit !== null) {
+            binaryBufferRef.current += bit;
+            lastDetectionTime.current = currentTime;
+            
+            // Update live display of bits
+            setDetectedBits(prev => prev + 1);
+            setCurrentBits(prev => {
+              const newBits = prev + bit;
+              // Keep last 50 bits visible
+              return newBits.length > 50 ? newBits.slice(-50) : newBits;
+            });
+            
+            // Update status
+            setReceivingStatus(`Detecting... (${binaryBufferRef.current.length} bits) - Last: ${bit}`);
+            
+            // Process data more frequently for better responsiveness
+            if (binaryBufferRef.current.length > 50) {
+              if (processBinaryData(binaryBufferRef.current)) {
+                return; // Don't continue if data is successfully processed
+              }
+              
+              // Keep reasonable buffer size
+              if (binaryBufferRef.current.length > 2000) {
+                binaryBufferRef.current = binaryBufferRef.current.slice(-1000);
+              }
+            }
           }
         }
       }
