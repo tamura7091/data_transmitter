@@ -22,6 +22,8 @@ const Receiver = () => {
   const lastDetectionTime = useRef(0);
   const stateHistoryRef = useRef([]);
   const currentStateRef = useRef({ color: 'unknown', startTime: 0, duration: 0 });
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
 
   // Convert binary to string
   const binaryToString = (binary) => {
@@ -101,123 +103,140 @@ const Receiver = () => {
     return false;
   }, [decodedText]);
 
-    // Detection loop with Manchester decoding
-  const detectFlashes = useCallback(() => {
-    if (!isReceiving || !videoRef.current || !canvasRef.current) return;
+    // Audio detection loop with frequency-based decoding
+  const detectAudio = useCallback(() => {
+    if (!isReceiving || !analyserRef.current) return;
 
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-
-    if (video.readyState === video.HAVE_ENOUGH_DATA) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0);
-
-      const brightness = analyzeBrightness(canvas, ctx);
-      const currentTime = Date.now();
-      const threshold = detectionSensitivity * 2.55; // Convert percentage to 0-255 scale
-      
-      // Simple ON/OFF detection
-      const isOn = brightness > threshold;
-      const currentState = isOn ? 'white' : 'black';
-      
-      // Detect state changes with debouncing
-      if (currentState !== currentStateRef.current.color && 
-          currentTime - lastDetectionTime.current > 30) { // 30ms debounce for Manchester
+    const analyser = analyserRef.current;
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(dataArray);
+    
+    // Check both target frequencies
+    const sampleRate = 44100;
+    const freq0 = 600; // '0' frequency
+    const freq1 = 1000; // '1' frequency
+    
+    const binIndex0 = Math.floor(freq0 * analyser.fftSize / sampleRate);
+    const binIndex1 = Math.floor(freq1 * analyser.fftSize / sampleRate);
+    
+    const volume0 = dataArray[binIndex0] || 0;
+    const volume1 = dataArray[binIndex1] || 0;
+    
+    // Use the stronger signal
+    const volume = Math.max(volume0, volume1);
+    const dominantFreq = volume0 > volume1 ? 600 : 1000;
+    
+    const currentTime = Date.now();
+    const threshold = detectionSensitivity * 2.55; // Convert percentage to 0-255 scale
+    
+    // Simple ON/OFF detection
+    const isOn = volume > threshold;
+    const currentState = isOn ? 'sound' : 'silence';
+    
+    // Detect state changes with debouncing
+    if (currentState !== currentStateRef.current.color && 
+        currentTime - lastDetectionTime.current > 50) { // 50ms debounce
         
-        // Record the previous state
+              // Record the previous state
         if (currentStateRef.current.color !== 'unknown') {
           const duration = currentTime - currentStateRef.current.startTime;
           stateHistoryRef.current.push({
             color: currentStateRef.current.color,
-            duration: duration
+            duration: duration,
+            frequency: currentStateRef.current.frequency
           });
-          
-          // Keep only last 20 states
-          if (stateHistoryRef.current.length > 20) {
-            stateHistoryRef.current.shift();
-          }
-        }
         
-        // Start new state
+        // Keep only last 20 states
+        if (stateHistoryRef.current.length > 20) {
+          stateHistoryRef.current.shift();
+        }
+      }
+      
+              // Start new state
         currentStateRef.current = {
           color: currentState,
           startTime: currentTime,
-          duration: 0
+          duration: 0,
+          frequency: dominantFreq
         };
+      
+      // Frequency-based decoding: Determine bit based on dominant frequency
+      if (stateHistoryRef.current.length >= 1) {
+        const lastState = stateHistoryRef.current[stateHistoryRef.current.length - 1];
         
-        // Manchester decoding: Look for transitions
-        if (stateHistoryRef.current.length >= 2) {
-          const lastState = stateHistoryRef.current[stateHistoryRef.current.length - 1];
-          const secondLastState = stateHistoryRef.current[stateHistoryRef.current.length - 2];
-          
-          // Determine bit based on transition direction
-          let bit = null;
-          if (lastState.color === 'white' && secondLastState.color === 'black') {
-            // BLACK → WHITE = '0'
+        let bit = null;
+        if (lastState.color === 'sound') {
+          // Determine bit based on frequency
+          if (lastState.frequency === 600) {
             bit = '0';
-          } else if (lastState.color === 'black' && secondLastState.color === 'white') {
-            // WHITE → BLACK = '1'
+          } else if (lastState.frequency === 1000) {
             bit = '1';
           }
+        }
+        
+        if (bit !== null) {
+          binaryBufferRef.current += bit;
+          lastDetectionTime.current = currentTime;
           
-          if (bit !== null) {
-            binaryBufferRef.current += bit;
-            lastDetectionTime.current = currentTime;
+          // Update live display of bits
+          setDetectedBits(prev => prev + 1);
+          setCurrentBits(prev => {
+            const newBits = prev + bit;
+            // Keep last 50 bits visible
+            return newBits.length > 50 ? newBits.slice(-50) : newBits;
+          });
+          
+          // Update status
+          setReceivingStatus(`Detecting... (${binaryBufferRef.current.length} bits) - Last: ${bit} (${lastState.frequency}Hz)`);
+          
+          // Process data more frequently for better responsiveness
+          if (binaryBufferRef.current.length > 50) {
+            if (processBinaryData(binaryBufferRef.current)) {
+              return; // Don't continue if data is successfully processed
+            }
             
-            // Update live display of bits
-            setDetectedBits(prev => prev + 1);
-            setCurrentBits(prev => {
-              const newBits = prev + bit;
-              // Keep last 50 bits visible
-              return newBits.length > 50 ? newBits.slice(-50) : newBits;
-            });
-            
-            // Update status
-            setReceivingStatus(`Detecting... (${binaryBufferRef.current.length} bits) - Last: ${bit}`);
-            
-            // Process data more frequently for better responsiveness
-            if (binaryBufferRef.current.length > 50) {
-              if (processBinaryData(binaryBufferRef.current)) {
-                return; // Don't continue if data is successfully processed
-              }
-              
-              // Keep reasonable buffer size
-              if (binaryBufferRef.current.length > 2000) {
-                binaryBufferRef.current = binaryBufferRef.current.slice(-1000);
-              }
+            // Keep reasonable buffer size
+            if (binaryBufferRef.current.length > 2000) {
+              binaryBufferRef.current = binaryBufferRef.current.slice(-1000);
             }
           }
         }
       }
-      
-      lastBrightnessRef.current = brightness;
-      frameCountRef.current++;
     }
+    
+    lastBrightnessRef.current = volume;
+    frameCountRef.current++;
+    detectionRef.current = requestAnimationFrame(detectAudio);
+  }, [isReceiving, detectionSensitivity, processBinaryData]);
 
-    detectionRef.current = requestAnimationFrame(detectFlashes);
-  }, [isReceiving, detectionSensitivity, analyzeBrightness, processBinaryData]);
-
-  // Start camera
-  const startCamera = async () => {
+  // Start microphone
+  const startMicrophone = async () => {
     try {
       setCameraError('');
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        } 
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        }
       });
       
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      
+      // Create audio context for analysis
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      
+      source.connect(analyser);
+      analyser.fftSize = 256;
+      
+      // Store for detection
+      audioContextRef.current = audioContext;
+      analyserRef.current = analyser;
     } catch (error) {
-      console.error('Camera access error:', error);
-      setCameraError('Could not access camera. Please check permissions.');
+      console.error('Microphone access error:', error);
+      setCameraError('Could not access microphone. Please check permissions.');
     }
   };
 
@@ -234,14 +253,14 @@ const Receiver = () => {
 
   // Start receiving
   const startReceiving = async () => {
-    await startCamera();
+    await startMicrophone();
     setIsReceiving(true);
     setReceivedData('');
     setDecodedText('');
     setIsDecoding(false);
     setCurrentBits('');
     setDetectedBits(0);
-    setReceivingStatus('Starting detection...');
+    setReceivingStatus('Starting audio detection...');
     binaryBufferRef.current = '';
     frameCountRef.current = 0;
     lastDetectionTime.current = 0;
@@ -263,14 +282,14 @@ const Receiver = () => {
   // Start detection when receiving begins
   useEffect(() => {
     if (isReceiving) {
-      detectFlashes();
+      detectAudio();
     }
     return () => {
       if (detectionRef.current) {
         cancelAnimationFrame(detectionRef.current);
       }
     };
-  }, [isReceiving, detectFlashes]);
+  }, [isReceiving, detectAudio]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -302,27 +321,31 @@ const Receiver = () => {
 
   return (
     <div className="receiver">
-      <div className="camera-section">
-        <h3>Camera Feed</h3>
-        <div className="camera-container">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="camera-video"
-          />
-          <canvas ref={canvasRef} style={{ display: 'none' }} />
+      <div className="audio-section">
+        <h3>Audio Detection</h3>
+        <div className="audio-container">
+          <div className="audio-visualizer-large">
+            <div className="audio-wave">
+              <div className="wave-bar"></div>
+              <div className="wave-bar"></div>
+              <div className="wave-bar"></div>
+              <div className="wave-bar"></div>
+              <div className="wave-bar"></div>
+              <div className="wave-bar"></div>
+              <div className="wave-bar"></div>
+              <div className="wave-bar"></div>
+            </div>
+          </div>
           
           {cameraError && (
-            <div className="camera-error">
+            <div className="audio-error">
               {cameraError}
             </div>
           )}
           
           {!isReceiving && !cameraError && (
-            <div className="camera-placeholder">
-              Camera will appear here when receiving
+            <div className="audio-placeholder">
+              🔊 Microphone will be activated when receiving
             </div>
           )}
         </div>
@@ -330,7 +353,7 @@ const Receiver = () => {
         <div className="camera-controls">
           <div className="sensitivity-control">
             <label htmlFor="sensitivity-slider">
-              Detection Sensitivity: {detectionSensitivity}%
+              Audio Sensitivity: {detectionSensitivity}%
             </label>
             <input
               type="range"
@@ -454,10 +477,10 @@ const Receiver = () => {
         <div className="instructions">
           <h4>Instructions:</h4>
           <ol>
-            <li>Click "Start Receiving" to activate the camera</li>
-            <li>Point the camera at the transmitter's flash area</li>
-            <li>Adjust sensitivity if needed for better detection</li>
-            <li>The app will automatically detect and decode the flashing data</li>
+            <li>Click "Start Receiving" to activate the microphone</li>
+            <li>Point the microphone at the transmitter's speakers</li>
+            <li>Adjust audio sensitivity if needed for better detection</li>
+            <li>The app will automatically detect and decode the audio beeps</li>
           </ol>
         </div>
       </div>

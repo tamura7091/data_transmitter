@@ -32,11 +32,24 @@ const Transmitter = () => {
     });
   };
 
-  // Flash transmission function with Manchester encoding
+  // Sound transmission function with Morse-like encoding
   const transmitBinary = useCallback(async (binaryData) => {
-    const flashArea = document.getElementById('flash-area');
-    if (!flashArea) return;
-
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // Resume audio context (required for user interaction)
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+    
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator.frequency.setValueAtTime(800, audioContext.currentTime); // 800Hz tone
+    oscillator.type = 'sine';
+    
     setIsTransmitting(true);
     
     // Add start sequence (10101010) and end sequence (01010101)
@@ -44,34 +57,33 @@ const Transmitter = () => {
     const endSequence = '01010101';
     const fullData = startSequence + binaryData + endSequence;
 
-    // Manchester encoding: Each bit is transmitted as 2 half-bits
-    // - '0' = BLACK → WHITE (low to high transition)
-    // - '1' = WHITE → BLACK (high to low transition)
-    // This ensures every bit has a transition, making detection reliable
+    // Frequency-based encoding:
+    // - '0' = 600Hz tone
+    // - '1' = 1000Hz tone
+    // - Each bit has same duration
     
-    for (let i = 0; i < fullData.length; i++) {
-      if (!transmissionRef.current) break;
-      
-      const bit = fullData[i];
-      const halfDuration = flashSpeed / 2;
-      
-      if (bit === '0') {
-        // '0' = BLACK → WHITE
-        flashArea.style.backgroundColor = '#000000';
-        await new Promise(resolve => setTimeout(resolve, halfDuration));
-        flashArea.style.backgroundColor = '#ffffff';
-        await new Promise(resolve => setTimeout(resolve, halfDuration));
-      } else {
-        // '1' = WHITE → BLACK
-        flashArea.style.backgroundColor = '#ffffff';
-        await new Promise(resolve => setTimeout(resolve, halfDuration));
-        flashArea.style.backgroundColor = '#000000';
-        await new Promise(resolve => setTimeout(resolve, halfDuration));
+    oscillator.start();
+    
+          for (let i = 0; i < fullData.length; i++) {
+        if (!transmissionRef.current) break;
+        
+        const bit = fullData[i];
+        const currentTime = audioContext.currentTime;
+        const bitDuration = flashSpeed / 1000; // Convert ms to seconds
+        
+        // Set frequency based on bit value
+        const frequency = bit === '0' ? 600 : 1000;
+        oscillator.frequency.setValueAtTime(frequency, currentTime);
+        
+        // Play the tone for the bit duration
+        gainNode.gain.setValueAtTime(0, currentTime);
+        gainNode.gain.linearRampToValueAtTime(0.5, currentTime + 0.01);
+        gainNode.gain.linearRampToValueAtTime(0, currentTime + bitDuration - 0.01);
+        
+        await new Promise(resolve => setTimeout(resolve, flashSpeed));
       }
-    }
     
-    // Reset to default color
-    flashArea.style.backgroundColor = '#f0f0f0';
+    oscillator.stop();
     setIsTransmitting(false);
   }, [flashSpeed]);
 
@@ -212,12 +224,12 @@ const Transmitter = () => {
         )}
 
         <div className="speed-control">
-          <label htmlFor="speed-slider">Flash Speed: {flashSpeed}ms per bit</label>
+          <label htmlFor="speed-slider">Transmission Speed: {flashSpeed}ms per bit</label>
           <input
             type="range"
             id="speed-slider"
-            min="50"
-            max="500"
+            min="100"
+            max="1000"
             value={flashSpeed}
             onChange={(e) => setFlashSpeed(Number(e.target.value))}
             disabled={isTransmitting}
@@ -226,9 +238,41 @@ const Transmitter = () => {
 
         <div className="transmission-controls">
           {!isTransmitting && !isCountingDown ? (
-            <button className="transmit-button" onClick={handleTransmit}>
-              Start Transmission
-            </button>
+            <>
+              <button className="transmit-button" onClick={handleTransmit}>
+                Start Transmission
+              </button>
+              <button 
+                className="test-audio-button" 
+                onClick={async () => {
+                  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                  if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                  }
+                  const oscillator = audioContext.createOscillator();
+                  const gainNode = audioContext.createGain();
+                  oscillator.connect(gainNode);
+                  gainNode.connect(audioContext.destination);
+                  oscillator.type = 'sine';
+                  oscillator.start();
+                  
+                  // Test both frequencies
+                  const currentTime = audioContext.currentTime;
+                  oscillator.frequency.setValueAtTime(600, currentTime); // '0' tone
+                  gainNode.gain.setValueAtTime(0.5, currentTime);
+                  
+                  setTimeout(() => {
+                    oscillator.frequency.setValueAtTime(1000, currentTime + 0.5); // '1' tone
+                  }, 500);
+                  
+                  setTimeout(() => {
+                    oscillator.stop();
+                  }, 1000);
+                }}
+              >
+                🔊 Test Tones (600Hz + 1000Hz)
+              </button>
+            </>
           ) : (
             <button className="stop-button" onClick={stopTransmission}>
               {isCountingDown ? 'Cancel Countdown' : 'Stop Transmission'}
@@ -244,19 +288,28 @@ const Transmitter = () => {
         )}
       </div>
 
-      <div className="flash-container">
-        <h3>Transmission Area</h3>
-        <div id="flash-area" className="flash-area">
+      <div className="sound-container">
+        <h3>Sound Transmission</h3>
+        <div id="sound-area" className="sound-area">
           {isCountingDown ? (
             <div className="countdown-status">Get ready! {countdown}</div>
           ) : isTransmitting ? (
-            <div className="transmission-status">Transmitting...</div>
+            <div className="transmission-status">
+              🔊 Transmitting audio...
+              <div className="audio-visualizer">
+                <div className="audio-bar"></div>
+                <div className="audio-bar"></div>
+                <div className="audio-bar"></div>
+                <div className="audio-bar"></div>
+                <div className="audio-bar"></div>
+              </div>
+            </div>
           ) : (
             <div className="ready-status">Ready to transmit</div>
           )}
         </div>
-        <p className="flash-instructions">
-          Point your receiver camera at this area during transmission
+        <p className="sound-instructions">
+          🔊 Audio will be transmitted through your speakers. Point receiver microphone at speakers.
         </p>
       </div>
     </div>
