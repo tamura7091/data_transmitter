@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import './Transmitter.css';
 
 const Transmitter = () => {
@@ -7,8 +7,11 @@ const Transmitter = () => {
   const [isTransmitting, setIsTransmitting] = useState(false);
   const [inputMode, setInputMode] = useState('text'); // 'text' or 'file'
   const [flashSpeed, setFlashSpeed] = useState(100); // milliseconds per bit
+  const [countdown, setCountdown] = useState(0);
+  const [isCountingDown, setIsCountingDown] = useState(false);
   const transmissionRef = useRef(null);
   const fileInputRef = useRef(null);
+  const countdownRef = useRef(null);
 
   // Convert string to binary
   const stringToBinary = (str) => {
@@ -55,26 +58,70 @@ const Transmitter = () => {
     setIsTransmitting(false);
   }, [flashSpeed]);
 
-  const handleTransmit = async () => {
+  // Countdown function
+  const startCountdown = () => {
+    setIsCountingDown(true);
+    setCountdown(3);
+    
+    countdownRef.current = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(countdownRef.current);
+          setIsCountingDown(false);
+          setCountdown(0);
+          // Start actual transmission
+          performTransmission();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  // Actual transmission function
+  const performTransmission = async () => {
     let binaryData = '';
     
     if (inputMode === 'text' && inputText.trim()) {
       binaryData = stringToBinary(inputText);
     } else if (inputMode === 'file' && selectedFile) {
       binaryData = await fileToBinary(selectedFile);
-    } else {
-      alert('Please enter text or select a file to transmit.');
+    }
+
+    if (binaryData) {
+      transmissionRef.current = true;
+      await transmitBinary(binaryData);
+      transmissionRef.current = null;
+    }
+  };
+
+  const handleTransmit = async () => {
+    // Validate input
+    if (inputMode === 'text' && !inputText.trim()) {
+      alert('Please enter text to transmit.');
+      return;
+    }
+    if (inputMode === 'file' && !selectedFile) {
+      alert('Please select a file to transmit.');
       return;
     }
 
-    transmissionRef.current = true;
-    await transmitBinary(binaryData);
-    transmissionRef.current = null;
+    // Start countdown
+    startCountdown();
   };
 
   const stopTransmission = () => {
+    // Stop countdown if running
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    
     transmissionRef.current = null;
     setIsTransmitting(false);
+    setIsCountingDown(false);
+    setCountdown(0);
+    
     const flashArea = document.getElementById('flash-area');
     if (flashArea) {
       flashArea.style.backgroundColor = '#f0f0f0';
@@ -85,6 +132,15 @@ const Transmitter = () => {
     const file = event.target.files[0];
     setSelectedFile(file);
   };
+
+  // Cleanup effect
+  useEffect(() => {
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="transmitter">
@@ -152,22 +208,31 @@ const Transmitter = () => {
         </div>
 
         <div className="transmission-controls">
-          {!isTransmitting ? (
+          {!isTransmitting && !isCountingDown ? (
             <button className="transmit-button" onClick={handleTransmit}>
               Start Transmission
             </button>
           ) : (
             <button className="stop-button" onClick={stopTransmission}>
-              Stop Transmission
+              {isCountingDown ? 'Cancel Countdown' : 'Stop Transmission'}
             </button>
           )}
         </div>
+
+        {isCountingDown && (
+          <div className="countdown-display">
+            <div className="countdown-number">{countdown}</div>
+            <div className="countdown-text">Transmission starting in...</div>
+          </div>
+        )}
       </div>
 
       <div className="flash-container">
         <h3>Transmission Area</h3>
         <div id="flash-area" className="flash-area">
-          {isTransmitting ? (
+          {isCountingDown ? (
+            <div className="countdown-status">Get ready! {countdown}</div>
+          ) : isTransmitting ? (
             <div className="transmission-status">Transmitting...</div>
           ) : (
             <div className="ready-status">Ready to transmit</div>

@@ -192,9 +192,48 @@
   animation: pulse 1s infinite;
 }
 
+.countdown-status {
+  animation: countdown-pulse 1s infinite;
+  color: #ff9500;
+  font-weight: 600;
+}
+
+.countdown-display {
+  background: linear-gradient(135deg, #ff9500, #ff6b35);
+  color: white;
+  padding: 1.5rem;
+  border-radius: 12px;
+  text-align: center;
+  margin-top: 1rem;
+  box-shadow: 0 4px 20px rgba(255, 149, 0, 0.3);
+}
+
+.countdown-number {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+  animation: countdown-bounce 1s infinite;
+}
+
+.countdown-text {
+  font-size: 1rem;
+  margin-top: 0.5rem;
+  opacity: 0.9;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
+}
+
+@keyframes countdown-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes countdown-bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
 }
 
 .flash-instructions {

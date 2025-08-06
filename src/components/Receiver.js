@@ -7,6 +7,8 @@ const Receiver = () => {
   const [cameraError, setCameraError] = useState('');
   const [detectionSensitivity, setDetectionSensitivity] = useState(50);
   const [receivingStatus, setReceivingStatus] = useState('');
+  const [currentBits, setCurrentBits] = useState('');
+  const [detectedBits, setDetectedBits] = useState(0);
   
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -15,6 +17,7 @@ const Receiver = () => {
   const binaryBufferRef = useRef('');
   const lastBrightnessRef = useRef(0);
   const frameCountRef = useRef(0);
+  const lastDetectionTime = useRef(0);
 
   // Convert binary to string
   const binaryToString = (binary) => {
@@ -89,25 +92,36 @@ const Receiver = () => {
 
       const brightness = analyzeBrightness(canvas, ctx);
       const threshold = detectionSensitivity * 2.55; // Convert percentage to 0-255 scale
+      const currentTime = Date.now();
       
-      // Detect significant brightness changes
-      if (Math.abs(brightness - lastBrightnessRef.current) > 30) {
+      // Detect brightness changes with timing control
+      if (Math.abs(brightness - lastBrightnessRef.current) > 20 && 
+          currentTime - lastDetectionTime.current > 30) { // Minimum 30ms between detections
+        
         const bit = brightness > threshold ? '1' : '0';
         binaryBufferRef.current += bit;
+        lastDetectionTime.current = currentTime;
+        
+        // Update live display of bits
+        setDetectedBits(prev => prev + 1);
+        setCurrentBits(prev => {
+          const newBits = prev + bit;
+          // Keep last 50 bits visible
+          return newBits.length > 50 ? newBits.slice(-50) : newBits;
+        });
         
         // Update status
         setReceivingStatus(`Detecting... (${binaryBufferRef.current.length} bits)`);
         
-        // Process data periodically
-        if (binaryBufferRef.current.length > 100) {
+        // Process data more frequently for better responsiveness
+        if (binaryBufferRef.current.length > 50) {
           if (processBinaryData(binaryBufferRef.current)) {
-            stopReceiving();
-            return;
+            return; // Don't continue if data is successfully processed
           }
           
-          // Keep last 1000 bits to avoid memory issues
-          if (binaryBufferRef.current.length > 1000) {
-            binaryBufferRef.current = binaryBufferRef.current.slice(-500);
+          // Keep reasonable buffer size
+          if (binaryBufferRef.current.length > 2000) {
+            binaryBufferRef.current = binaryBufferRef.current.slice(-1000);
           }
         }
       }
@@ -157,9 +171,12 @@ const Receiver = () => {
     await startCamera();
     setIsReceiving(true);
     setReceivedData('');
+    setCurrentBits('');
+    setDetectedBits(0);
     setReceivingStatus('Starting detection...');
     binaryBufferRef.current = '';
     frameCountRef.current = 0;
+    lastDetectionTime.current = 0;
   };
 
   // Stop receiving
@@ -271,6 +288,18 @@ const Receiver = () => {
           {receivingStatus && (
             <div className="receiving-status">
               {receivingStatus}
+            </div>
+          )}
+
+          {isReceiving && currentBits && (
+            <div className="live-bits-display">
+              <h4>Live Binary Stream:</h4>
+              <div className="bits-stream">
+                {currentBits}
+              </div>
+              <div className="bits-counter">
+                Total bits detected: {detectedBits}
+              </div>
             </div>
           )}
         </div>
